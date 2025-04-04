@@ -3,10 +3,13 @@ import { Card, CardContent } from "./components/ui/card";
 import { Button } from "./components/ui/button";
 import { motion } from "framer-motion";
 import 'bootstrap/dist/css/bootstrap.min.css'
+import OpenAI from "openai";
 import { Button as BsButton, Form, InputGroup, Card as BsCard, Container, Row, Col, Badge } from 'react-bootstrap';
 
-// Create React App 환경변수 접근 방식 사용
-const apiKey = process.env.REACT_APP_OPENAI_API_KEY;
+const client = new OpenAI({
+  apiKey: process.env.REACT_APP_OPENAI_API_KEY,
+  dangerouslyAllowBrowser: true
+});
 
 const tarotNames = [
   "The Fool", "The Magician", "The High Priestess", "The Empress", "The Emperor",
@@ -38,139 +41,47 @@ const tarotDeck = Array.from({ length: 78 }).map((_, i) => ({
 const fetchTarotInterpretation = async (cards, question) => {
   try {
     const cardNames = cards.map(c => c.name).join(", ");
-    console.log('API 요청 시작:', { cardNames, question });
-    
-    // API 키 상태 로깅
-    console.log('API 키 확인:', {
-      exists: !!apiKey,
-      length: apiKey?.length,
-      prefix: apiKey?.substring(0, 8) + '...'
-    });
-    
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: "gpt-4o",
-        messages: [
-          {
-            "role": "system",
-            "content": "당신은 경험 많은 타로 리더입니다. 직관적이고 영적인 해석을 제공합니다."
-          },
-          {
-            "role": "user",
-            "content": `다음은 사용자가 뽑은 타로 카드입니다: ${cardNames}. 이 사람의 질문은: "${question}". 이 카드들의 의미를 종합해서 직관적이고 영적인 타로 해석을 해 주세요. 한국어로 답해주세요.`
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 1000
-      })
+    const prompt = `다음은 사용자가 뽑은 타로 카드입니다: ${cardNames}. 이 사람의 질문은: \"${question}\". 이 카드들의 의미를 종합해서 직관적이고 영적인 타로 해석을 해 주세요. 한국어로 답해주세요.`;
+
+    const response = await client.responses.create({
+      model: "gpt-4o",
+      input: prompt
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('API 오류 응답:', {
-        status: response.status,
-        statusText: response.statusText,
-        body: errorText
-      });
-      
-      // 오류 내용을 자세히 분석
-      let errorDetail = '';
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorDetail = errorJson.error?.message || errorText;
-      } catch {
-        errorDetail = errorText;
-      }
-      
-      throw new Error(`API 요청 실패 (${response.status}): ${errorDetail}`);
-    }
-    
-    const data = await response.json();
-    console.log('API 응답:', data);
-    
-    if (data.choices && data.choices[0] && data.choices[0].message) {
-      return data.choices[0].message.content;
+    console.log('API Response:', response.output_text);
+
+    if (response && response.output_text) {
+      return response.output_text;
     } else {
-      throw new Error('응답 형식이 올바르지 않습니다: ' + JSON.stringify(data));
+      throw new Error('Invalid response format');
     }
   } catch (error) {
     console.error('Error fetching tarot interpretation:', error);
-    
-    if (error.message.includes('401')) {
-      return "API 키 인증에 실패했습니다. API 키가 올바른지 확인해주세요.";
-    } else if (error.message.includes('429')) {
-      return "API 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.";
-    } else if (error.message.includes('500')) {
-      return "OpenAI 서버에 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
-    }
-    
-    return "죄송합니다. 타로 해석을 가져오는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.\n\n오류: " + error.message;
+    return "죄송합니다. 타로 해석을 가져오는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.";
   }
 };
 
+// 타로 천사가 카드 수를 결정하는 함수 추가
 const determineCardCount = async (question) => {
   try {
-    console.log('카드 수 결정 API 요청 시작:', { question });
-    
-    // API 키 상태 로깅
-    console.log('API 키 확인:', {
-      exists: !!apiKey,
-      length: apiKey?.length,
-      prefix: apiKey?.substring(0, 8) + '...'
+    const prompt = `사용자가 "${question}"이라는 질문을 했습니다. 이 질문에 가장 적합한 타로 카드 수를 결정해주세요. 최소 1장, 최대 5장 사이로 결정해주세요. 숫자만 출력해주세요.`;
+
+    const response = await client.responses.create({
+      model: "gpt-4o",
+      input: prompt
     });
-    
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: "gpt-4o",
-        messages: [
-          {
-            "role": "system",
-            "content": "당신은 타로 전문가입니다. 주어진 질문에 가장 적합한 카드 수를 결정해주세요."
-          },
-          {
-            "role": "user",
-            "content": `사용자가 "${question}"이라는 질문을 했습니다. 이 질문에 가장 적합한 타로 카드 수를 결정해주세요. 최소 1장, 최대 5장 사이로 결정해주세요. 숫자만 출력해주세요.`
-          }
-        ],
-        temperature: 0.3,
-        max_tokens: 10
-      })
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('API 오류 응답:', {
-        status: response.status,
-        statusText: response.statusText,
-        body: errorText
-      });
-      console.error(`API 요청 실패 (${response.status}):`, errorText);
-      return 3; // 오류 시 기본값
-    }
-    
-    const data = await response.json();
-    console.log('카드 수 결정 응답:', data);
-    
-    if (data.choices && data.choices[0] && data.choices[0].message) {
-      const cardCount = parseInt(data.choices[0].message.content.match(/\d+/)?.[0] || "3");
+
+    if (response && response.output_text) {
+      // 숫자만 추출
+      const cardCount = parseInt(response.output_text.match(/\d+/)?.[0] || "3");
+      // 1-5 사이의 숫자로 제한
       return Math.min(Math.max(cardCount, 1), 5);
     } else {
-      console.error('유효하지 않은 응답 형식:', data);
-      return 3;
+      return 3; // 기본값
     }
   } catch (error) {
     console.error('Error determining card count:', error);
-    return 3;
+    return 3; // 오류 발생시 기본값
   }
 };
 
@@ -214,6 +125,7 @@ export default function MyTarot() {
     tarotDeck.slice(i * cardsPerSpread, (i + 1) * cardsPerSpread)
   );
 
+   // 결과를 로딩하는 동안 프로그레스 바를 움직이는 함수
    const simulateProgress = () => {
     let progress = 0;
     const interval = setInterval(() => {
@@ -230,21 +142,17 @@ export default function MyTarot() {
   if (!started) {
     return (
       <div className="relative flex flex-col items-center min-h-screen w-full text-center px-4 overflow-hidden">
-        <div className="d-flex flex-column align-items-center justify-content-center min-vh-100">
-          <div className="position-relative" style={{ width: "500px", height: "700px", marginBottom: "20px" }}>
-            <video
-              autoPlay
-              loop
-              muted
-              playsInline
-              className="w-100 h-100 object-cover"
-              style={{ boxShadow: "0 0 30px rgba(147,51,234,0.5)", border: "none" }}
-            >
-              <source src="/videos/tarot-intro.mp4" type="video/mp4" />
-              Your browser does not support the video tag.
-            </video>    
-          </div>
-          
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="absolute top-0 left-0 w-full h-full object-cover z-[-1] opacity-70"
+        >
+          <source src="/videos/tarot-intro.mp4" type="video/mp4" />
+          Your browser does not support the video tag.
+        </video>    
+                     
           <div className="d-flex justify-content-center align-items-center">
             <span className="display-5 me-4">🔮</span>
             <BsButton 
@@ -263,7 +171,7 @@ export default function MyTarot() {
             </BsButton>
             <span className="display-5 ms-4">🔮</span>
           </div>
-        </div>
+        
       </div>
     );
   }
@@ -348,10 +256,12 @@ export default function MyTarot() {
                   if (question.trim() !== "") {
                     setIsQuestionLoading(true);
                     try {
+                      // GPT로부터 카드 수 결정 받기
                       const cardCount = await determineCardCount(question);
                       setMaxSelectable(cardCount);
                     } catch (error) {
                       console.error("Error determining card count:", error);
+                      // 오류 발생 시 기본값 유지
                     } finally {
                       setIsQuestionLoading(false);
                       setQuestionSubmitted(true);
@@ -498,12 +408,12 @@ export default function MyTarot() {
               <div className="position-absolute d-flex align-items-center" style={{ left: '50%', transform: 'translateX(-50%)' }}>
                 {chunk.map((card, i) => {
                   const isSelected = selectedCards.find((c) => c.id === card.id);
-                  const cardWidth = 80;
+                  const cardWidth = 80; // 카드 너비
                   const totalCards = chunk.length;
-                  const cardSpacing = 20;
-                  const offset = i * cardSpacing;
-                  const totalSpreadWidth = (totalCards - 1) * cardSpacing;
-                  const startOffset = -totalSpreadWidth / 2;
+                  const cardSpacing = 20; // 각 카드 사이 간격
+                  const offset = i * cardSpacing; // 각 카드의 오프셋
+                  const totalSpreadWidth = (totalCards - 1) * cardSpacing; // 전체 스프레드 너비
+                  const startOffset = -totalSpreadWidth / 2; // 시작 위치 (중앙 정렬)
 
                   return (
                     <motion.div
@@ -517,7 +427,7 @@ export default function MyTarot() {
                       initial={{ opacity: 0, y: 20 }}
                       animate={{
                         opacity: 1,
-                        y: isSelected ? -25 : 0,
+                        y: isSelected ? -25 : 0, // 선택된 카드는 위로 더 올라감
                         transition: {
                           delay: i * 0.01,
                           type: "spring",

@@ -2,6 +2,11 @@ import React, { useState } from "react";
 import { Card, CardContent } from "./components/ui/card";
 import { Button } from "./components/ui/button";
 import { motion } from "framer-motion";
+import 'bootstrap/dist/css/bootstrap.min.css';
+import { Button as BsButton, Form, InputGroup, Card as BsCard, Container, Row, Col, Badge } from 'react-bootstrap';
+
+// Create React App 환경변수 접근 방식 사용
+const apiKey = process.env.REACT_APP_OPENAI_API_KEY;
 
 const tarotNames = [
   "The Fool", "The Magician", "The High Priestess", "The Empress", "The Emperor",
@@ -26,241 +31,111 @@ const tarotNames = [
 const tarotDeck = Array.from({ length: 78 }).map((_, i) => ({
   id: `card_${i}`,
   name: tarotNames[i],
-  backImage: "/images/cards/tarot-back.png",
-  frontImage: `/images/cards/tarot-front-${i + 1}.jpg`
+  backImage: "/images/tarot-back.png",
+  frontImage: `/images/tarot-front-${i + 1}.jpg`
 }));
 
 const fetchTarotInterpretation = async (cards, question) => {
-  const cardNames = cards.map(c => c.name).join(", ");
-  const prompt = `다음은 사용자가 뽑은 타로 카드입니다: ${cardNames}. 이 사람의 질문은: \"${question}\". 이 카드들의 의미를 종합해서 직관적이고 영적인 타로 해석을 해 주세요. 한국어로 답해주세요.`;
+  try {
+    const cardNames = cards.map(c => c.name).join(", ");
+    console.log('API 요청 시작:', { cardNames, question });
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: "gpt-4",
-      messages: [
-        { role: "system", content: "당신은 신비로운 타로 마스터입니다." },
-        { role: "user", content: prompt }
-      ],
-      temperature: 0.9
-    })
-  });
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages: [
+          {
+            "role": "system",
+            "content": "당신은 경험 많은 타로 리더입니다. 직관적이고 영적인 해석을 제공합니다."
+          },
+          {
+            "role": "user",
+            "content": `다음은 사용자가 뽑은 타로 카드입니다: ${cardNames}. 이 사람의 질문은: "${question}". 이 카드들의 의미를 종합해서 직관적이고 영적인 타로 해석을 해 주세요. 한국어로 답해주세요.`
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 1000
+      })
+    });
 
-  const data = await response.json();
-  return data.choices[0].message.content;
+    if (!response.ok) {
+      const errorData = await response.text();
+      throw new Error(`API 요청 실패 (${response.status}): ${errorData}`);
+    }
+
+    const data = await response.json();
+    console.log('API 응답:', data);
+
+    if (data.choices && data.choices[0] && data.choices[0].message) {
+      return data.choices[0].message.content;
+    } else {
+      throw new Error('응답 형식이 올바르지 않습니다: ' + JSON.stringify(data));
+    }
+  } catch (error) {
+    console.error('Error fetching tarot interpretation:', error);
+
+    if (error.message.includes('401')) {
+      return "API 키 인증에 실패했습니다. API 키가 올바른지 확인해주세요.";
+    } else if (error.message.includes('429')) {
+      return "API 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.";
+    } else if (error.message.includes('500')) {
+      return "OpenAI 서버에 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
+    }
+
+    return "죄송합니다. 타로 해석을 가져오는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.\n\n오류: " + error.message;
+  }
 };
 
-export default function MyTarot() {
-  const [selectedCards, setSelectedCards] = useState([]);
-  const [showResult, setShowResult] = useState(false);
-  const [started, setStarted] = useState(false);
-  const [questionSubmitted, setQuestionSubmitted] = useState(false);
-  const [question, setQuestion] = useState("");
-  const [listening, setListening] = useState(false);
-  const [gptResponse, setGptResponse] = useState("");
-  const maxSelectable = 3;
+const determineCardCount = async (question) => {
+  try {
+    console.log('카드 수 결정 API 요청 시작:', { question });
 
-  const toggleCard = (card) => {
-    if (selectedCards.find((c) => c.id === card.id)) {
-      setSelectedCards(selectedCards.filter((c) => c.id !== card.id));
-    } else if (selectedCards.length < maxSelectable) {
-      setSelectedCards([...selectedCards, card]);
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages: [
+          {
+            "role": "system",
+            "content": "당신은 타로 전문가입니다. 주어진 질문에 가장 적합한 카드 수를 결정해주세요."
+          },
+          {
+            "role": "user",
+            "content": `사용자가 "${question}"이라는 질문을 했습니다. 이 질문에 가장 적합한 타로 카드 수를 결정해주세요. 최소 1장, 최대 5장 사이로 결정해주세요. 숫자만 출력해주세요.`
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 10
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.text();
+      console.error(`API 요청 실패 (${response.status}): ${errorData}`);
+      return 3;
     }
-  };
 
-  const startVoiceInput = () => {
-    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-    recognition.lang = 'ko-KR';
-    recognition.start();
-    setListening(true);
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      setQuestion(transcript);
-      setListening(false);
-    };
-    recognition.onerror = () => setListening(false);
-  };
+    const data = await response.json();
+    console.log('카드 수 결정 응답:', data);
 
-  const handleSubmitQuestion = () => {
-    if (question.trim()) {
-      setQuestionSubmitted(true);
-      setStarted(true);
+    if (data.choices && data.choices[0] && data.choices[0].message) {
+      const cardCount = parseInt(data.choices[0].message.content.match(/\d+/)?.[0] || "3");
+      return Math.min(Math.max(cardCount, 1), 5);
+    } else {
+      console.error('유효하지 않은 응답 형식:', data);
+      return 3;
     }
-  };
-
-  const handleCompleteSelection = async () => {
-    if (selectedCards.length === maxSelectable) {
-      const interpretation = await fetchTarotInterpretation(selectedCards, question);
-      setGptResponse(interpretation);
-      setShowResult(true);
-    }
-  };
-
-  const spreadCount = 3;
-  const cardsPerSpread = Math.ceil(tarotDeck.length / spreadCount);
-  const spreadChunks = Array.from({ length: spreadCount }, (_, i) =>
-    tarotDeck.slice(i * cardsPerSpread, (i + 1) * cardsPerSpread)
-  );
-
-  if (!started) {
-    return (
-      <div className="relative flex flex-col items-center justify-center min-h-screen text-center px-4 overflow-hidden">
-        <video
-          autoPlay
-          loop
-          muted
-          className="absolute inset-0 w-full h-full object-cover"
-        >
-          <source src="/videos/tarot-intro.mp4" type="video/mp4" />
-        </video>
-        <div className="relative z-10">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
-            className="space-y-6"
-          >
-            <h1 className="text-4xl font-bold text-white mb-4">마이타로</h1>
-            <Button
-              onClick={() => setStarted(true)}
-              className="bg-purple-600 hover:bg-purple-700 text-white px-8 py-4 text-lg"
-            >
-              타로 상담 시작하기
-            </Button>
-          </motion.div>
-        </div>
-      </div>
-    );
+  } catch (error) {
+    console.error('Error determining card count:', error);
+    return 3;
   }
-
-  if (!questionSubmitted) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-purple-900 to-indigo-900 flex items-center justify-center p-4">
-        <Card className="w-full max-w-2xl">
-          <CardContent className="pt-6">
-            <h2 className="text-2xl font-bold text-center mb-6">당신의 질문을 들려주세요</h2>
-            <div className="space-y-4">
-              <textarea
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                placeholder="질문을 입력하세요..."
-                className="w-full h-32 p-4 border rounded-lg focus:ring-2 focus:ring-purple-500"
-              />
-              <div className="flex justify-center space-x-4">
-                <Button
-                  onClick={startVoiceInput}
-                  disabled={listening}
-                  className={listening ? "bg-red-500" : "bg-purple-500"}
-                >
-                  {listening ? "녹음 중..." : "음성으로 질문하기"}
-                </Button>
-                <Button
-                  onClick={handleSubmitQuestion}
-                  className="bg-green-500"
-                >
-                  질문 제출
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (!showResult) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-purple-900 to-indigo-900 p-4">
-        <div className="max-w-7xl mx-auto">
-          <h2 className="text-2xl font-bold text-white text-center mb-6">
-            {maxSelectable}장의 카드를 선택해주세요
-          </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            {tarotDeck.map((card) => (
-              <motion.div
-                key={card.id}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => toggleCard(card)}
-                className={`relative cursor-pointer ${
-                  selectedCards.find((c) => c.id === card.id)
-                    ? "z-10"
-                    : ""
-                }`}
-              >
-                <img
-                  src={
-                    selectedCards.find((c) => c.id === card.id)
-                      ? card.frontImage
-                      : card.backImage
-                  }
-                  alt={card.name}
-                  className="w-full h-auto rounded-lg shadow-lg"
-                />
-                {selectedCards.find((c) => c.id === card.id) && (
-                  <div className="absolute inset-0 border-4 border-purple-500 rounded-lg"></div>
-                )}
-              </motion.div>
-            ))}
-          </div>
-          {selectedCards.length === maxSelectable && (
-            <div className="fixed bottom-8 left-0 right-0 flex justify-center">
-              <Button
-                onClick={handleCompleteSelection}
-                className="bg-green-500 hover:bg-green-600 text-white px-8 py-4"
-              >
-                선택 완료
-              </Button>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-purple-900 to-indigo-900 p-4">
-      <div className="max-w-4xl mx-auto">
-        <Card className="bg-white/90 backdrop-blur-sm">
-          <CardContent className="pt-6">
-            <h2 className="text-2xl font-bold text-center mb-6">타로 해석</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-              {selectedCards.map((card) => (
-                <div key={card.id} className="text-center">
-                  <img
-                    src={card.frontImage}
-                    alt={card.name}
-                    className="w-full h-auto rounded-lg shadow-lg mb-2"
-                  />
-                  <p className="font-semibold">{card.name}</p>
-                </div>
-              ))}
-            </div>
-            <div className="prose max-w-none">
-              <p className="whitespace-pre-wrap">{gptResponse}</p>
-            </div>
-            <div className="mt-8 flex justify-center">
-              <Button
-                onClick={() => {
-                  setStarted(false);
-                  setQuestionSubmitted(false);
-                  setShowResult(false);
-                  setSelectedCards([]);
-                  setQuestion("");
-                  setGptResponse("");
-                }}
-                className="bg-purple-500 hover:bg-purple-600 text-white"
-              >
-                다시 시작하기
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
-}
+};
