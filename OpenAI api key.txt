@@ -1,0 +1,3 @@
+OpenAI Key 발급:
+- 키 이름 : MyTorot api key
+- 키 : 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
